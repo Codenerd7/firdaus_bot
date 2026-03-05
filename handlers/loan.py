@@ -2,6 +2,10 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Asia/Almaty")
 
 from utils.limits import check_attempt
 from database.db import (
@@ -15,6 +19,24 @@ from handlers.loan_admin import admin_kb  # кнопки админа
 
 router = Router()
 
+def _normalize_due_date(raw: str) -> str:
+    """
+    Принимаем строго dd.mm.yyyy, возвращаем нормализованно с нулями: 01.02.2026
+    """
+    raw = (raw or "").strip()
+    dt = datetime.strptime(raw, "%d.%m.%Y")  # ValueError если формат/дата неверные
+    return dt.strftime("%d.%m.%Y")
+
+
+def _validate_due_date_not_past(ddmmyyyy: str) -> None:
+    """
+    Запрещаем дату в прошлом. Сегодня разрешаем.
+    Если хочешь "только будущее" — скажи, поменяю на <=.
+    """
+    dt = datetime.strptime(ddmmyyyy, "%d.%m.%Y")
+    today = datetime.now(TZ).date()
+    if dt.date() < today:
+        raise ValueError("past")
 
 class LoanFSM(StatesGroup):
     amount = State()
@@ -60,7 +82,32 @@ async def set_amount(message: Message, state: FSMContext):
 
 @router.message(LoanFSM.due_date)
 async def set_due_date(message: Message, state: FSMContext):
-    data = await state.update_data(due_date=message.text)
+    raw = (message.text or "").strip()
+
+    # 1) формат + корректность даты
+    try:
+        due_date = _normalize_due_date(raw)  # строго dd.mm.yyyy, ещё и нормализует нули
+    except ValueError:
+        await message.answer(
+            "Неправильный формат даты.\n"
+            "Введите срок возврата в формате <b>дд.мм.гггг</b>, например: <b>20.10.2026</b>",
+            parse_mode="HTML",
+        )
+        return
+
+    # 2) не в прошлом
+    try:
+        _validate_due_date_not_past(due_date)
+    except ValueError:
+        await message.answer(
+            "Дата не должна быть в прошлом.\n"
+            "Введите срок возврата (например, <b>20.10.2026</b>):",
+            parse_mode="HTML",
+        )
+        return
+
+    # всё ок — сохраняем нормализованную дату
+    data = await state.update_data(due_date=due_date)
 
     loan_id = await add_loan(
         user_id=message.from_user.id,
@@ -68,6 +115,23 @@ async def set_due_date(message: Message, state: FSMContext):
         amount=data["amount"],
         due_date=data["due_date"]
     )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Стать свидетелем (0/2)", callback_data=f"witness:{loan_id}")],
+        [InlineKeyboardButton(text="🤝 Стать поручителем (0/1)", callback_data=f"guarantor:{loan_id}")]
+    ])
+
+    borrower_name = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
+
+    await message.answer(
+        f"📌 <b>Заёмщик</b>: <a href='tg://user?id={message.from_user.id}'>{borrower_name}</a>\n"
+        f"💰 Сумма: {data['amount']} ₸\n"
+        f"📅 Срок возврата: {data['due_date']}\n\n"
+        "Нужны: 2 свидетеля.\n"
+        "Опционально: поручитель.",
+        reply_markup=kb
+    )
+    await state.clear()
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Стать свидетелем (0/2)", callback_data=f"witness:{loan_id}")],
