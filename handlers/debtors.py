@@ -7,7 +7,10 @@ import aiosqlite
 from config import ADMINS
 from database.db import DB_PATH
 from datetime import datetime
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
+TZ = ZoneInfo("Asia/Almaty")
 router = Router()
 
 BTN_DEBTORS = "💸 Должники"
@@ -33,6 +36,44 @@ def _fmt_date(date_str: str | None) -> str:
     except Exception:
         return date_str
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Asia/Almaty")
+
+
+def _parse_due_date(date_str: str | None):
+    if not date_str:
+        return None
+
+    s = date_str.strip()
+
+    # формат dd.mm.yyyy
+    try:
+        return datetime.strptime(s, "%d.%m.%Y").date()
+    except Exception:
+        pass
+
+    # формат d.m (без года)
+    try:
+        dt = datetime.strptime(s, "%d.%m")
+        current_year = datetime.now(TZ).year
+        return dt.replace(year=current_year).date()
+    except Exception:
+        pass
+
+    return None
+
+
+def _overdue_days(due_date_str: str | None) -> int:
+    due = _parse_due_date(due_date_str)
+    if not due:
+        return 0
+
+    today = datetime.now(TZ).date()
+    diff = (today - due).days
+
+    return diff if diff > 0 else 0
 
 @router.message(F.text == BTN_DEBTORS)
 async def debtors_button(message: Message, bot: Bot):
@@ -49,6 +90,7 @@ async def debtors_button(message: Message, bot: Bot):
         l.username,
         l.amount AS loan_amount,
         l.issued_at,
+        l.due_date,
         (l.amount - COALESCE(SUM(r.amount), 0)) AS debt_current
     FROM loans l
     LEFT JOIN repayments r ON r.loan_id = l.id
@@ -69,16 +111,20 @@ async def debtors_button(message: Message, bot: Bot):
     lines: list[str] = ["💸 <b>Список должников</b>\n"]
 
     for i, row in enumerate(rows, start=1):
-        loan_id, debtor_id, username, loan_amount, issued_at, debt_current = row
+        loan_id, debtor_id, username, loan_amount, issued_at, due_date, debt_current = row
 
         debtor_name = _fmt_user(int(debtor_id), username)
         issued_txt = _fmt_date(issued_at)
+
+        overdue = _overdue_days(due_date)
+        overdue_line = f"   ⚠ Просрочено: <b>{overdue}</b> дней\n" if overdue > 0 else ""
 
         lines.append(
             f"{i}) 👤 {debtor_name}\n"
             f"   💰 Сумма займа: <b>{_fmt_money(int(loan_amount))}</b>\n"
             f"   📅 Дата займа: <b>{issued_txt}</b>\n"
             f"   🔻 Текущий долг: <b>{_fmt_money(int(debt_current))}</b>\n"
+            f"{overdue_line}"
         )
 
     await bot.send_message(
