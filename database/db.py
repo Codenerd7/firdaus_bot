@@ -450,3 +450,62 @@ async def cancel_payment(user_id: int):
             WHERE user_id = ? AND status = 'pending'
         """, (user_id,))
         await db.commit()
+
+async def get_fund_summary_for_ui() -> dict:
+    """
+    Возвращает цифры для отчёта фонда.
+
+    Логика:
+    - total_contributions: сумма contributions.amount
+    - total_issued_loans: сумма loans.amount по реально выданным займам (issued_at NOT NULL) и не rejected
+    - total_repaid: сумма repayments.amount (по займам не rejected)
+    - total_debt: текущая задолженность = сумма (loan.amount - repaid_by_loan)
+    - free_sum: свободно = total_contributions - total_debt
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        # Всего взносов
+        cur = await db.execute("SELECT COALESCE(SUM(amount), 0) FROM contributions")
+        total_contributions = int((await cur.fetchone())[0])
+
+        # Всего выдано займов (только реально выданные: issued_at NOT NULL)
+        cur = await db.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM loans
+            WHERE (status IS NULL OR status != 'rejected')
+              AND issued_at IS NOT NULL
+        """)
+        total_issued_loans = int((await cur.fetchone())[0])
+
+        # Всего возвращено (по займам, которые не rejected)
+        cur = await db.execute("""
+            SELECT COALESCE(SUM(r.amount), 0)
+            FROM repayments r
+            JOIN loans l ON l.id = r.loan_id
+            WHERE (l.status IS NULL OR l.status != 'rejected')
+        """)
+        total_repaid = int((await cur.fetchone())[0])
+
+        # Общий долг (текущая задолженность)
+        cur = await db.execute("""
+            SELECT COALESCE(SUM(l.amount - COALESCE(x.paid, 0)), 0)
+            FROM loans l
+            LEFT JOIN (
+                SELECT loan_id, SUM(amount) AS paid
+                FROM repayments
+                GROUP BY loan_id
+            ) x ON x.loan_id = l.id
+            WHERE (l.status IS NULL OR l.status != 'rejected')
+              AND l.issued_at IS NOT NULL
+              AND (l.amount - COALESCE(x.paid, 0)) > 0
+        """)
+        total_debt = int((await cur.fetchone())[0])
+
+        free_sum = max(0, total_contributions - total_debt)
+
+        return {
+            "total_contributions": total_contributions,
+            "total_issued_loans": total_issued_loans,
+            "total_repaid": total_repaid,
+            "total_debt": total_debt,
+            "free_sum": free_sum,
+        }

@@ -3,7 +3,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 # Кнопки
 BTN_CONTRIBUTE = "💰 Пополнить фонд"
 BTN_LOAN = "📌 Займ"
-BTN_CHECK_BALANCE = "📊 Проверить баланс"
+BTN_CHECK_BALANCE = "📊 Финансы фонда"
 BTN_HISTORY = "📜 История"
 BTN_DEBTORS = "💸 Должники"
 BTN_CANCEL_PAYMENT = "🚫 Отменить заявку"
