@@ -9,8 +9,10 @@ from config import bot  # проверь, что в config бот создан �
 from database.db import init_db
 from handlers import start, donation, balance, loan, loan_admin, payment_admin
 from handlers.history import history_router
+from handlers.history_admin import history_admin_router
 from keyboards.default import main_kb
 from aiogram.fsm.context import FSMContext
+from handlers.debtors import router as debtors_router
 
 print("FIRDAUS BOT: NEW PAYMENTS FLOW ENABLED")
 
@@ -54,7 +56,9 @@ async def main():
     dp.include_router(loan.router)
     dp.include_router(loan_admin.router)
     dp.include_router(payment_admin.router)
+    dp.include_router(history_admin_router)  # admin /history_all — до обычного history
     dp.include_router(history_router)   # ← ВАЖНО: history здесь
+    dp.include_router(debtors_router)
     dp.include_router(default_router)   # дефолтный — последним
 
     logging.info("Бот запущен ✅")
