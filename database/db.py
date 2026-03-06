@@ -2,8 +2,9 @@ import aiosqlite
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
+from config import DB_PATH as CONFIG_DB_PATH
 
-DB_PATH = Path("database/bot_db.sqlite3")
+DB_PATH = Path(CONFIG_DB_PATH)
 TZ = ZoneInfo("Asia/Almaty")
 
 
@@ -129,17 +130,7 @@ async def get_active_loans():
         return (await cursor.fetchone())[0]
 
 
-async def get_fund_summary_for_ui():
-    total_contributions = await get_total_contributions()
-    active_loans = await get_active_loans()
-    free_sum = total_contributions - active_loans
-    if free_sum < 0:
-        free_sum = 0
-    return {
-        "total_contributions": total_contributions,
-        "active_loans": active_loans,
-        "free_sum": free_sum
-    }
+
 
 
 # --- Попытки лимита ---

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 from aiogram import Dispatcher, Router, F
 from aiogram.types import Message
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -18,9 +19,16 @@ print("FIRDAUS BOT: NEW PAYMENTS FLOW ENABLED")
 
 
 # настройка логов
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s"
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_DIR / "bot.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
 )
 
 # отдельный роутер для дефолтного хэндлера

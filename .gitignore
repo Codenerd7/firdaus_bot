@@ -1,17 +1,12 @@
 # AI assistants
 .claude/
 
-# Node / frontend
+# Node (если вдруг появится)
 node_modules/
-package-lock.json
-package.json
 
 # Databases
 *.sqlite3
 *.db
-
-# Migrations (auto)
-migrations/
 
 # Python
 __pycache__/
@@ -20,7 +15,7 @@ __pycache__/
 # Virtual environment
 .venv/
 
-# Env
+# Environment variables
 .env
 
 # Logs
