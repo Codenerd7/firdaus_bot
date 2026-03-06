@@ -2,10 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-TZ = ZoneInfo("Asia/Almaty")
+from utils.date_utils import normalize_due_date, validate_due_date_not_past
 
 from utils.limits import check_attempt
 from database.db import (
@@ -19,24 +16,10 @@ from handlers.loan_admin import admin_kb  # кнопки админа
 
 router = Router()
 
-def _normalize_due_date(raw: str) -> str:
-    """
-    Принимаем строго dd.mm.yyyy, возвращаем нормализованно с нулями: 01.02.2026
-    """
-    raw = (raw or "").strip()
-    dt = datetime.strptime(raw, "%d.%m.%Y")  # ValueError если формат/дата неверные
-    return dt.strftime("%d.%m.%Y")
 
 
-def _validate_due_date_not_past(ddmmyyyy: str) -> None:
-    """
-    Запрещаем дату в прошлом. Сегодня разрешаем.
-    Если хочешь "только будущее" — скажи, поменяю на <=.
-    """
-    dt = datetime.strptime(ddmmyyyy, "%d.%m.%Y")
-    today = datetime.now(TZ).date()
-    if dt.date() < today:
-        raise ValueError("past")
+
+
 
 class LoanFSM(StatesGroup):
     amount = State()
@@ -84,9 +67,8 @@ async def set_amount(message: Message, state: FSMContext):
 async def set_due_date(message: Message, state: FSMContext):
     raw = (message.text or "").strip()
 
-    # 1) формат + корректность даты
     try:
-        due_date = _normalize_due_date(raw)  # строго dd.mm.yyyy, ещё и нормализует нули
+        due_date = normalize_due_date(raw)
     except ValueError:
         await message.answer(
             "Неправильный формат даты.\n"
@@ -95,18 +77,16 @@ async def set_due_date(message: Message, state: FSMContext):
         )
         return
 
-    # 2) не в прошлом
     try:
-        _validate_due_date_not_past(due_date)
+        validate_due_date_not_past(due_date)
     except ValueError:
         await message.answer(
             "Дата не должна быть в прошлом.\n"
-            "Введите срок возврата (например, <b>20.10.2026</b>):",
+            "Введите срок возврата в формате <b>дд.мм.гггг</b>, например: <b>20.10.2026</b>",
             parse_mode="HTML",
         )
         return
 
-    # всё ок — сохраняем нормализованную дату
     data = await state.update_data(due_date=due_date)
 
     loan_id = await add_loan(
